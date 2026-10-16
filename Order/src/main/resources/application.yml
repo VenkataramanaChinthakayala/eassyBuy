@@ -1,0 +1,9 @@
+spring.application.name=Order
+
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+spring.datasource.url=jdbc:mysql:///mysqlking
+spring.datasource.username=root
+spring.datasource.password=c##mysql
+
+spring.jpa.show-sql=true
+spring.jpa.hibernate.ddl-auto=update
