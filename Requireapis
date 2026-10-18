@@ -1,0 +1,701 @@
+EASSYBUY — COMPLETE SHOPPING APPLICATION API ROADMAP
+=====================================================
+Base URL: /api
+Project: Spring Boot + MySQL
+Purpose: Buyer, Seller, Admin, Super Admin APIs, with real-time shopping features.
+
+IMPORTANT DESIGN RULES
+----------------------
+1. These are endpoint designs/recommendations, not proof that every endpoint already exists in the code.
+2. Use REST APIs for normal create/read/update/delete operations. Use Server-Sent Events (SSE) or WebSocket only where the client benefits from live updates.
+3. Do not create duplicate endpoints for the same business action. In this roadmap, checkout is the normal way to create a buyer order; do not separately expose POST /api/orders unless you intentionally support another validated order-creation flow.
+4. The logged-in user identity must come from the authenticated JWT/security context, not from a userId supplied by the client.
+5. Enforce ownership and role checks for every buyer, seller, admin, and super-admin endpoint.
+6. Use database transactions and atomic stock updates for checkout/inventory. Payment webhooks must be signature-verified and idempotent.
+7. SSE is one-way server-to-client. Use WebSocket only if the client and server both need to send frequent live messages.
+8. Use pagination/filtering for large lists. Validate input and return consistent error responses.
+
+=====================================================
+PART 1 — EXISTING APIs IDENTIFIED IN THE PROVIDED CODE
+=====================================================
+
+A. Authentication — existing mappings
+-------------------------------------
+http://localhost:8090/api/oauth2/authorization/google
+POST   /api/auth/register
+POST   /api/auth/login
+PUT    /api/auth/forgot-password
+POST   /api/auth/verify?otp=...&mail=...
+POST   /api/auth/resend-otp?mail=...
+
+Recommended improvements:
+- Prefer POST /api/auth/forgot-password with a request DTO instead of PUT with a raw email string.
+- Add POST /api/auth/reset-password after validating a time-limited reset token/OTP.
+- Consider POST /api/auth/refresh only if refresh tokens are implemented securely.
+- Do not return sensitive account details or reveal whether an email exists.
+- Keep OTPs and reset tokens time-limited, single-use, and rate-limited.
+
+B. Seller profile/request — existing mappings
+--------------------------------------------
+POST   /api/seller
+GET    /api/seller
+PUT    /api/seller
+DELETE /api/seller
+
+Notes:
+- These are seller self-service profile/application endpoints, based on the provided controller.
+- Avoid treating DELETE as permanent deletion if the seller has orders or financial records; use account deactivation/closure workflow.
+- Seller approval/rejection and suspension should be separate Admin APIs (Part 8).
+
+C. Product management and browsing — existing mappings
+------------------------------------------------------
+POST   /api/product/add_product
+PUT    /api/product/update/{id}
+DELETE /api/product/delete_product/{id}
+GET    /api/product/get_product/{id}
+GET    /api/product/view_all_products
+GET    /api/product/search
+
+Recommended consistent REST paths for a future cleanup (do not keep both versions forever):
+POST   /api/seller/products
+PUT    /api/seller/products/{productId}
+DELETE /api/seller/products/{productId}
+GET    /api/products/{productId}
+GET    /api/products
+GET    /api/products/search  (or use GET /api/products with query filters)
+
+Product listing and search should support page, size, sort, category, brand, price range, rating, availability, and keyword filters as needed. Public browsing should return only active/approved products.
+
+D. Buyer profile — existing mappings
+------------------------------------
+POST   /api/profile
+GET    /api/profile
+PUT    /api/profile
+DELETE /api/profile
+
+Keep one current-user profile resource. Do not accept arbitrary user IDs for the buyer's own profile unless an authorized admin use case requires it.
+
+E. Addresses — existing mappings
+--------------------------------
+POST   /api/addresses
+GET    /api/addresses
+GET    /api/addresses/{id}
+DELETE /api/addresses/{id}
+PUT    /api/addresses/{id}/default
+
+Add:
+PUT    /api/addresses/{id}       Update an address
+
+Fix the current controller before building more features:
+- GET /api/addresses currently has an unused required request parameter; remove it unless genuinely needed.
+- DELETE /api/addresses/{id} must call the service and actually delete/deactivate the address.
+- GET /api/addresses/{id} must call a get-address-by-ID service method, not addAddress.
+- PUT /api/addresses/{id}/default should use @PathVariable id and actually set the default address.
+- Verify the address belongs to the authenticated user.
+- Prevent deleting an address that is still required by an active order, or preserve an order's address snapshot.
+
+F. Super Admin — existing mappings
+----------------------------------
+POST   /api/super/admin
+PUT    /api/super/admin
+GET    /api/super/admin
+DELETE /api/super/admin/{id}
+
+Restrict these endpoints to SUPER_ADMIN. Do not allow an admin to promote themselves or another user to SUPER_ADMIN.
+
+=====================================================
+PART 2 — CART AND CHECKOUT APIs
+=====================================================
+
+Cart
+----
+GET    /api/cart
+POST   /api/cart/items
+PUT    /api/cart/items/{itemId}
+DELETE /api/cart/items/{itemId}
+DELETE /api/cart/items                 Clear current user's cart (optional)
+POST   /api/cart/merge                 Merge guest cart after login (optional)
+
+Checkout
+--------
+POST   /api/checkout/validate           Validate current cart, price, stock, address, delivery options
+POST   /api/checkout                    Create order from validated cart and start payment flow
+GET    /api/checkout/{checkoutId}       Retrieve checkout state (only if a checkout session is used)
+
+Important:
+- POST /api/checkout should be the main buyer-facing order-creation flow.
+- Do not also add POST /api/orders unless there is a distinct, justified order-creation use case.
+- Recalculate price, discounts, shipping, and stock on the server; never trust client totals.
+- Reserve stock atomically with an expiry. Release reservations on timeout/cancellation/failure.
+- Use an idempotency key for checkout/payment initiation to reduce duplicate orders.
+
+=====================================================
+PART 3 — ORDER LIFECYCLE APIs
+=====================================================
+
+Buyer
+-----
+GET    /api/orders
+GET    /api/orders/{orderId}
+GET    /api/orders/{orderId}/timeline
+GET    /api/orders/{orderId}/tracking
+POST   /api/orders/{orderId}/cancel
+POST   /api/orders/{orderId}/return-requests
+
+Optional:
+GET    /api/orders/{orderId}/invoice
+POST   /api/orders/{orderId}/reorder
+
+Seller order management is in Part 7. Admin order management is in Part 9.
+
+Rules:
+- Buyers can access only their own orders.
+- Cancellation must depend on the order state and fulfilment status.
+- Return requests must check return window, product eligibility, and order/payment state.
+- Store a status history/timeline for auditability.
+- Tracking can return the latest shipment snapshot; live shipment updates are optional.
+
+=====================================================
+PART 4 — PAYMENT AND REFUND APIs
+=====================================================
+
+POST   /api/payments                         Create a payment attempt for a checkout/order
+GET    /api/payments/{paymentId}             Check payment status for an authorized owner
+POST   /api/payments/webhook/{provider}      Receive provider events (server-to-server)
+POST   /api/payments/{paymentId}/retry        Retry an eligible failed payment
+GET    /api/orders/{orderId}/payment         View payment details for an authorized order
+POST   /api/orders/{orderId}/refund-requests  Buyer requests a refund (recommended buyer route)
+
+Admin/internal refund operations:
+GET    /api/admin/refunds
+POST   /api/admin/refunds/{refundId}/approve
+POST   /api/admin/refunds/{refundId}/reject
+POST   /api/admin/refunds/{refundId}/process  Only if this is an authorized operational action
+
+Avoid a public, unrestricted POST /api/refunds endpoint. A refund must be tied to an order/payment and validated against permissions and refund rules. Provider webhook signatures, idempotency, event replay protection, and reconciliation are required.
+
+=====================================================
+PART 5 — INVENTORY AND LIVE STOCK APIs
+=====================================================
+
+GET    /api/inventory/{productId}             Current stock/availability summary
+GET    /api/inventory/availability?productId=101&quantity=2
+GET    /api/inventory/low-stock               Low-stock list for authorized seller/admin
+
+Internal service operations (usually not public buyer endpoints):
+POST   /api/inventory/{productId}/reserve
+POST   /api/inventory/reservations/{reservationId}/release
+
+Do not allow a buyer to arbitrarily reserve or release another user's inventory. Reservation/release should normally be invoked by checkout, payment failure, order cancellation, or a scheduled expiry process. If exposed as HTTP endpoints, protect them for trusted internal/service use and enforce reservation ownership and expiry.
+
+Optional real-time stock stream:
+GET    /api/inventory/{productId}/stream       SSE: push stock/availability changes
+
+SSE guidance:
+- Use only if the UI needs stock changes pushed without polling, for example a product page showing limited stock.
+- Send sanitized availability, not internal warehouse details.
+- Require suitable authorization/rate limits and handle reconnects/heartbeats.
+- A normal GET inventory endpoint is still needed for the initial page load.
+
+=====================================================
+PART 6 — NOTIFICATIONS AND DEVICE REGISTRATION
+=====================================================
+
+GET    /api/notifications
+GET    /api/notifications/unread-count
+PATCH  /api/notifications/{notificationId}/read
+POST   /api/notifications/read-all
+PUT    /api/notifications/preferences
+POST   /api/devices/register
+DELETE /api/devices/{deviceId}
+
+Notification events may include:
+- Order placed, accepted/rejected, shipped, delivered, cancelled
+- Payment success/failure/refund status
+- Seller approval/rejection or request for more documents
+- Product approval/rejection
+- Price alert and back-in-stock alert
+- Security/account alerts
+
+Push delivery (for example Firebase Cloud Messaging) should be triggered asynchronously. Store notification history in the database; push delivery alone is not the notification history. Ensure a user can only read or manage their own notifications and devices.
+
+=====================================================
+PART 7 — SELLER DASHBOARD, ORDERS, AND LIVE UPDATES
+=====================================================
+
+GET    /api/seller/dashboard
+GET    /api/seller/orders
+GET    /api/seller/orders/{orderId}
+POST   /api/seller/orders/{orderId}/accept
+POST   /api/seller/orders/{orderId}/reject
+POST   /api/seller/orders/{orderId}/ship
+POST   /api/seller/orders/{orderId}/mark-delivered       Optional, if seller is permitted to confirm delivery
+
+Optional live stream:
+GET    /api/seller/stream                 SSE: live order/dashboard events for this seller
+
+Rules:
+- A seller can access only orders containing that seller's items.
+- In a multi-seller marketplace, order-level data may need seller-specific sub-orders/fulfilment records.
+- Accept/reject/ship actions must validate allowed state transitions.
+- Shipping should capture carrier and tracking number when applicable.
+- Do not let a seller mark an order delivered if delivery confirmation belongs to the carrier/admin.
+- Use SSE for one-way dashboard updates; use WebSocket only if interactive bidirectional communication is needed.
+
+=====================================================
+PART 8 — WISHLIST, PRICE ALERTS, AND STOCK ALERTS
+=====================================================
+
+Wishlist
+--------
+GET    /api/wishlist
+POST   /api/wishlist/items/{productId}
+DELETE /api/wishlist/items/{productId}
+
+Price alerts
+------------
+POST   /api/price-alerts
+GET    /api/price-alerts
+DELETE /api/price-alerts/{alertId}
+
+Back-in-stock alerts
+--------------------
+POST   /api/stock-alerts
+GET    /api/stock-alerts
+DELETE /api/stock-alerts/{alertId}
+
+These are useful optional marketplace features. Add GET and DELETE management endpoints so users can see and unsubscribe from their alerts. Deduplicate subscriptions and send notifications asynchronously. Do not create separate SSE endpoints for every alert type unless the UI truly requires live in-page updates; push notifications are usually enough.
+
+=====================================================
+PART 9 — ADMIN APIs
+=====================================================
+
+A. Seller verification and approval
+-----------------------------------
+GET    /api/admin/sellers/pending
+GET    /api/admin/sellers/{sellerId}
+GET    /api/admin/sellers
+GET    /api/admin/sellers/{sellerId}/documents
+POST   /api/admin/sellers/{sellerId}/approve
+POST   /api/admin/sellers/{sellerId}/reject
+POST   /api/admin/sellers/{sellerId}/request-changes
+PATCH  /api/admin/sellers/{sellerId}/status
+
+B. Product validation and moderation
+------------------------------------
+GET    /api/admin/products/pending
+GET    /api/admin/products/{productId}
+GET    /api/admin/products
+GET    /api/admin/products/reported
+POST   /api/admin/products/{productId}/approve
+POST   /api/admin/products/{productId}/reject
+POST   /api/admin/products/{productId}/request-changes
+PATCH  /api/admin/products/{productId}/status
+
+C. Order, return, dispute, and refund management
+------------------------------------------------
+GET    /api/admin/orders
+GET    /api/admin/orders/{orderId}
+GET    /api/admin/orders/{orderId}/timeline
+POST   /api/admin/orders/{orderId}/cancel
+POST   /api/admin/orders/{orderId}/resolve
+GET    /api/admin/returns
+POST   /api/admin/returns/{returnId}/approve
+POST   /api/admin/returns/{returnId}/reject
+GET    /api/admin/refunds
+POST   /api/admin/refunds/{refundId}/approve
+POST   /api/admin/refunds/{refundId}/reject
+POST   /api/admin/refunds/{refundId}/process
+
+D. Categories, brands, coupons, banners
+---------------------------------------
+GET    /api/categories                    Public active categories
+GET    /api/brands                        Public active brands
+
+POST   /api/admin/categories
+GET    /api/admin/categories
+PUT    /api/admin/categories/{categoryId}
+DELETE /api/admin/categories/{categoryId}   Prefer retire/deactivate if referenced by products
+
+POST   /api/admin/brands
+GET    /api/admin/brands
+PUT    /api/admin/brands/{brandId}
+DELETE /api/admin/brands/{brandId}          Optional; prefer deactivate if referenced
+
+POST   /api/admin/coupons
+GET    /api/admin/coupons
+PUT    /api/admin/coupons/{couponId}
+PATCH  /api/admin/coupons/{couponId}/status
+
+POST   /api/admin/banners
+GET    /api/admin/banners
+PUT    /api/admin/banners/{bannerId}
+DELETE /api/admin/banners/{bannerId}
+
+E. Admin dashboard, analytics, audit
+------------------------------------
+GET    /api/admin/dashboard
+GET    /api/admin/analytics/sales
+GET    /api/admin/analytics/orders
+GET    /api/admin/analytics/sellers
+GET    /api/admin/analytics/products
+GET    /api/admin/audit-logs
+GET    /api/admin/reports
+GET    /api/admin/health
+
+Security notes:
+- /api/admin/health should expose only safe, authorized health details; do not leak secrets, environment variables, stack traces, or infrastructure credentials.
+- Audit sensitive admin actions (seller approvals, product moderation, refunds, cancellations, role changes).
+- Use filters, pagination, date ranges, and authorization for reports.
+- Admin cannot create/promote a SUPER_ADMIN unless an explicit protected governance flow is designed.
+
+=====================================================
+PART 10 — SUPER ADMIN APIs
+=====================================================
+
+Existing endpoints:
+POST   /api/super/admin
+PUT    /api/super/admin
+GET    /api/super/admin
+DELETE /api/super/admin/{id}
+
+Recommended optional additions (only if your system needs them):
+GET    /api/super/admin/{id}
+PATCH  /api/super/admin/{id}/status
+GET    /api/super/audit-logs
+GET    /api/super/system/health
+
+Super Admin capabilities should focus on admin-account governance, high-level platform controls, and audit review. Keep SUPER_ADMIN role assignment tightly controlled, audited, and protected with stronger authentication where practical. Do not duplicate all admin endpoints under /api/super unless there is a real business requirement.
+
+=====================================================
+PART 11 — REVIEWS, RATINGS, REPORTS, AND SUPPORT
+=====================================================
+
+Reviews and ratings
+-------------------
+GET    /api/products/{productId}/reviews
+POST   /api/orders/{orderId}/items/{orderItemId}/reviews
+PUT    /api/reviews/{reviewId}
+DELETE /api/reviews/{reviewId}
+POST   /api/reviews/{reviewId}/report
+
+Only verified purchasers should be allowed to submit a verified-purchase review. Validate that the order item belongs to the buyer and is eligible for review.
+
+Customer support (optional)
+---------------------------
+POST   /api/support/tickets
+GET    /api/support/tickets
+GET    /api/support/tickets/{ticketId}
+POST   /api/support/tickets/{ticketId}/messages
+PATCH  /api/admin/support/tickets/{ticketId}/status
+GET    /api/admin/support/tickets
+
+Do not build a real-time chat/WebSocket feature unless live customer-agent chat is actually required. For a normal ticket system, REST endpoints plus notifications are sufficient.
+
+=====================================================
+PART 12 — SHIPPING AND DELIVERY (OPTIONAL, BUT USEFUL)
+=====================================================
+
+GET    /api/orders/{orderId}/shipments
+GET    /api/shipments/{shipmentId}
+GET    /api/shipments/{shipmentId}/tracking
+POST   /api/seller/orders/{orderId}/shipments
+PATCH  /api/admin/shipments/{shipmentId}/status
+
+If a shipping provider integration is used:
+POST   /api/shipping/webhook/{provider}
+
+Verify webhook authenticity and deduplicate provider events. Keep carrier tracking data separate from the order's high-level status.
+
+=====================================================
+PART 13 — WHICH REAL-TIME APIs ARE ACTUALLY NEEDED?
+=====================================================
+
+Recommended real-time endpoints to consider:
+1. GET /api/inventory/{productId}/stream
+   Purpose: push stock/availability changes to a product page. Optional; use if live stock visibility matters.
+
+2. GET /api/seller/stream
+   Purpose: push new orders and status/dashboard changes to the seller dashboard. Useful for marketplace operations.
+
+3. Optional buyer order stream:
+   GET /api/orders/{orderId}/stream
+   Purpose: push order status/tracking changes to the buyer's order screen. Add only if the UI needs in-page live updates.
+
+4. Optional admin operations stream:
+   GET /api/admin/stream
+   Purpose: push pending seller/product/order work to an admin dashboard. Add only if admins need live updates.
+
+Do not create SSE endpoints for cart, checkout, payments, notifications, wishlist, every product, and every dashboard by default. Usually:
+- Cart/checkout/payment: regular REST requests and responses.
+- Payment result: provider webhook updates backend; frontend polls GET payment status or receives an application event if needed.
+- Notifications: stored notification list + push (FCM) + unread-count API.
+- Order tracking: REST refresh or optional SSE.
+- Seller/admin dashboards: optional SSE.
+- Live chat: WebSocket only if bidirectional chat is a product requirement.
+
+For SSE implementation, authenticate the connection, authorize the resource, set timeouts/heartbeats, handle reconnects using event IDs where appropriate, clean up disconnected clients, and avoid leaking private information.
+
+=====================================================
+PART 14 — REMOVE, MERGE, OR DO NOT ADD
+=====================================================
+
+1. Do not add POST /api/orders as a second order creation route if POST /api/checkout already creates orders. Choose one validated flow; this roadmap chooses checkout.
+2. Do not expose unrestricted POST /api/refunds. Use order-linked buyer refund requests and protected admin/provider processing.
+3. Do not let buyers call reserve/release inventory freely. Make those internal checkout/order workflows, or tightly restrict service-only endpoints.
+4. Do not create separate live streams for every feature. Keep only streams that have a clear UI use case.
+5. Do not duplicate product endpoints indefinitely. Migrate old /api/product/add_product, /update/{id}, /delete_product/{id}, /get_product/{id}, /view_all_products toward consistent /api/products and /api/seller/products routes when ready.
+6. Do not duplicate seller profile APIs and seller approval APIs. Seller self-service is under /api/seller; approval/moderation is under /api/admin/sellers.
+7. Do not create buyer-facing admin endpoints or expose administrative data through normal buyer endpoints.
+8. Do not add an API solely because it sounds useful. Implement optional modules only when the UI/business flow needs them.
+9. Avoid hard deleting products, categories, sellers, or accounts that are referenced by orders; prefer deactivation/archiving.
+10. Do not accept userId/sellerId from request body as proof of identity; derive identity from authentication and then verify ownership.
+
+=====================================================
+PART 15 — RECOMMENDED IMPLEMENTATION ORDER
+=====================================================
+
+PHASE 1 — Fix existing endpoints and security
+- Fix AddressController bugs described in Part 1.
+- Standardize API paths and HTTP status codes.
+- Add DTO validation and global exception handling.
+- Verify JWT role/ownership rules for profile, address, seller, product, and admin endpoints.
+- Add pagination and consistent error responses.
+- Test existing APIs before adding new modules.
+
+PHASE 2 — Core shopping flow
+- Cart and cart items
+- Address selection
+- Checkout validation
+- Atomic inventory reservation
+- Order creation from checkout
+- Order details and timeline
+
+PHASE 3 — Payments
+- Payment attempt/status
+- Provider webhook verification and idempotency
+- Retry failed payment where supported
+- Cancellation and payment/refund state handling
+
+PHASE 4 — Seller operations
+- Seller dashboard
+- Seller order list/detail
+- Accept/reject/ship state transitions
+- Seller-specific order visibility
+
+PHASE 5 — Admin marketplace operations
+- Seller verification
+- Product moderation
+- Order/return/refund handling
+- Categories/brands/coupons/banners
+- Audit logs and dashboard reports
+
+PHASE 6 — Customer experience
+- Notification history and FCM device tokens
+- Wishlist
+- Reviews and ratings
+- Back-in-stock and price alerts
+- Invoice, shipment tracking, support tickets
+
+PHASE 7 — Real-time enhancements
+- Seller SSE stream first if live orders are needed
+- Inventory SSE stream if live stock is needed
+- Buyer order SSE stream if the order page needs live status updates
+- Admin SSE stream only if the admin dashboard needs it
+- WebSocket only for a genuine bidirectional feature such as live chat
+
+=====================================================
+PART 16 — MINIMUM DATABASE/DOMAIN MODELS TO PLAN FOR
+=====================================================
+
+Exact entity names depend on your existing code. Typical models include:
+- User, Role, RefreshToken (only if refresh tokens are used)
+- SellerProfile, SellerDocument, SellerStatusHistory
+- Product, Category, Brand, ProductImage, ProductStatusHistory
+- Address
+- Cart, CartItem
+- Inventory, InventoryReservation
+- CheckoutSession (optional)
+- Order, OrderItem, OrderStatusHistory, SellerFulfilment (for multi-seller orders)
+- Payment, PaymentEvent, Refund, RefundRequest
+- Shipment, TrackingEvent
+- Notification, NotificationPreference, DeviceToken
+- WishlistItem
+- PriceAlert, StockAlert
+- Review, ProductReport
+- Coupon, CouponRedemption, Banner
+- SupportTicket, SupportMessage
+- AdminAuditLog
+
+Do not create every model at once. Match the schema to the features you implement and the current project structure.
+
+=====================================================
+PART 17 — SECURITY AND TEST CHECKLIST
+=====================================================
+
+- Buyer A cannot view or modify Buyer B's cart, address, order, payment, notification, or wishlist.
+- Seller A cannot view or update Seller B's products/orders.
+- Only approved/active sellers can publish products.
+- Only authorized Admins can approve/reject sellers and products.
+- Only SUPER_ADMIN can manage admin accounts and high-privilege roles.
+- Product prices, discounts, delivery fees, and totals are recalculated on the server.
+- Inventory decrement/reservation is atomic under concurrent checkout.
+- Expired reservations are released safely and only once.
+- Duplicate checkout/payment requests do not create duplicate orders or charges.
+- Payment/shipping webhooks verify signatures and handle duplicate events.
+- Order state transitions reject invalid actions.
+- Refunds are tied to valid orders/payments and audited.
+- SSE connections are authenticated, authorized, rate-limited where appropriate, and cleaned up.
+- DTO validation, pagination limits, rate limiting, and global exception handling are implemented.
+- Secrets, tokens, payment data, personal documents, and stack traces are never exposed in logs or error responses.
+
+END OF ROADMAP
+==============
+This is a consolidated planning document based on the APIs shared in the conversation and the supplied controller mappings. It is not a claim that all endpoints have already been implemented. Implement the core phases first, then add optional real-time and marketplace features as your application requires.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+1. Cart and checkout APIs
+
+- POST /api/cart/items — Add a product to the cart
+- PUT /api/cart/items/{itemId} — Change quantity
+- DELETE /api/cart/items/{itemId} — Remove an item
+- GET /api/cart — Get the current cart
+- POST /api/checkout/validate — Validate prices, stock, and address
+- POST /api/checkout — Start checkout and create an order
+- POST /api/cart/merge — Merge guest cart after login
+
+2. Order lifecycle APIs
+
+- POST /api/orders — Create an order through a validated checkout flow
+- GET /api/orders — Get the logged-in user's orders
+- GET /api/orders/{orderId} — Get order details
+- GET /api/orders/{orderId}/tracking — Get shipment progress
+- POST /api/orders/{orderId}/cancel — Request cancellation
+- GET /api/orders/{orderId}/timeline — View order status history
+- POST /api/orders/{orderId}/return-requests — Request a return
+
+3. Payment APIs
+
+- POST /api/payments — Create a payment attempt
+- GET /api/payments/{paymentId} — Check payment status
+- POST /api/payments/webhook/{provider} — Receive payment-provider events
+- POST /api/payments/{paymentId}/retry — Retry an eligible failed payment
+- GET /api/orders/{orderId}/payment — View payment details
+- POST /api/refunds — Initiate an authorized refund
+
+4.inventory APIs
+
+- GET   /api/inventory/{productId} Get current stock
+- GET (SSE)  /api/inventory/{productId}/stream   Receive stock changes
+- POST  /api/inventory/{productId}/reserve   Reserve stock for checkout
+- POST  /api/inventory/{productId}/release  Release an expired or cancelled reservation
+- GET   /api/inventory/low-stock   Get low-stock products for authorized sellers
+- GET   /api/inventory/availability?productId=101&quantity=2  Check available quantity
+
+5.Notifications 
+
+GET /api/notifications — Get notification history
+GET /api/notifications/unread-count — Get unread count
+PATCH /api/notifications/{id}/read — Mark as read
+POST /api/notifications/read-all — Mark all as read
+PUT /api/notifications/preferences — Update notification preferences
+POST /api/devices/register — Register a device's push token
+DELETE /api/devices/{deviceId} — Unregister a device
+
+6.Seller dashboard and live order management
+
+- GET /api/seller/dashboard — Sales and order summary
+- GET /api/seller/orders — List the seller's orders
+- GET /api/seller/orders/{orderId} — View an order
+- POST /api/seller/orders/{orderId}/accept — Accept an order
+- POST /api/seller/orders/{orderId}/reject — Reject an eligible order
+- POST /api/seller/orders/{orderId}/ship — Mark as shipped
+-GET /api/seller/stream — Receive seller-side live updates through SSE, if appropriate
+
+7.Wishlist, price alerts, and back-in-stock notifications
+
+- GET /api/wishlist — View saved products
+- POST /api/wishlist/items/{productId} — Add a product
+- DELETE /api/wishlist/items/{productId} — Remove a product
+- POST /api/price-alerts — Subscribe to a price alert
+- POST /api/stock-alerts — Subscribe to a back-in-stock alert
+
+8.Admin APIs — the most important additions
+
+A. Seller verification and approval
+
+GET	    /api/admin/sellers/pending	List seller applications awaiting review
+GET   	/api/admin/sellers/{sellerId}	View seller details and submitted documents
+POST	/api/admin/sellers/{sellerId}/approve	Approve a seller
+POST	/api/admin/sellers/{sellerId}/reject	Reject an application with a reason
+POST	/api/admin/sellers/{sellerId}/request-changes	Request additional documents or corrections
+GET	    /api/admin/sellers	Search and filter sellers
+PATCH	/api/admin/sellers/{sellerId}/status	Suspend, reactivate, or change an eligible seller's status
+GET	    /api/admin/sellers/{sellerId}/documents	Review verification documents
+
+B. Product validation and moderation
+
+GET	    /api/admin/products/pending	List products awaiting approval
+GET	    /api/admin/products/{productId}	Inspect product details and images
+POST	/api/admin/products/{productId}/approve	Approve a listing
+POST	/api/admin/products/{productId}/reject	Reject a listing with a reason
+POST	/api/admin/products/{productId}/request-changes	Ask the seller to correct listing information
+GET  	/api/admin/products	Search products by status, seller, or category
+PATCH	/api/admin/products/{productId}/status	Hide, suspend, or restore an eligible listing
+GET 	/api/admin/products/reported	Review products reported by customers
+
+C. Order and marketplace management
+
+GET  	/api/admin/orders	Search all orders
+GET 	/api/admin/orders/{orderId}	Inspect an order
+GET	    /api/admin/orders/{orderId}/timeline	Investigate order history
+POST	/api/admin/orders/{orderId}/cancel	Perform an authorized administrative cancellation
+POST	/api/admin/orders/{orderId}/resolve	Record a resolution for an order dispute
+GET	    /api/admin/returns	Review customer return requests
+POST	/api/admin/returns/{returnId}/approve	Approve an eligible return
+POST	/api/admin/returns/{returnId}/reject	Reject a return with a reason
+GET	    /api/admin/refunds	Review refund requests and statuses
+
+D. Categories, brands, and marketplace configuration
+POST	/api/admin/categories	Create a category
+PUT	    /api/admin/categories/{id}	Update a category
+DELETE	/api/admin/categories/{id}	Retire or remove an unused category
+GET	    /api/admin/categories	List categories
+POST	/api/admin/brands	Create a brand
+PUT	    /api/admin/brands/{id}	Update brand details
+POST	/api/admin/coupons	Create a coupon
+PUT	    /api/admin/coupons/{id}	Update an eligible coupon
+GET	    /api/admin/coupons	Search and manage coupons
+POST	/api/admin/banners	Create a promotional banner
+PUT	    /api/admin/banners/{id}	Update a banner
+DELETE	/api/admin/banners/{id}	Remove a banner
+
+E. Admin dashboard, reports, and auditing
+
+GET	/api/admin/dashboard	Marketplace overview
+GET	/api/admin/analytics/sales	Sales metrics
+GET	/api/admin/analytics/orders	Order counts and status breakdown
+GET	/api/admin/analytics/sellers	Seller registrations and approval metrics
+GET	/api/admin/analytics/products	Product approval and listing metrics
+GET	/api/admin/audit-logs	Search administrative activity
+GET	/api/admin/reports	Access authorized business reports
+GET	/api/admin/health	View authorized application health information

@@ -1,6 +1,7 @@
 package com.vnk.eassy_buy.Entity.seller;
 
 import com.vnk.eassy_buy.Entity.user.User;
+import com.vnk.eassy_buy.base_entity.BaseEntity;
 import com.vnk.eassy_buy.constants.SellerStatus;
 
 import jakarta.persistence.Column;
@@ -23,7 +24,7 @@ import lombok.Setter;
 @NoArgsConstructor
 @Entity
 @Builder
-public class Seller {
+public class Seller extends BaseEntity{
 	
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)

@@ -7,6 +7,7 @@ import java.util.Set;
 import com.vnk.eassy_buy.Entity.Address.Address;
 import com.vnk.eassy_buy.Entity.profile.Profile;
 import com.vnk.eassy_buy.Entity.seller.Seller;
+import com.vnk.eassy_buy.base_entity.BaseEntity;
 import com.vnk.eassy_buy.constants.LoginProvider;
 import com.vnk.eassy_buy.constants.UserRoles;
 
@@ -34,7 +35,7 @@ import lombok.Setter;
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
-public class User {
+public class User extends BaseEntity {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)

@@ -19,24 +19,24 @@ import com.vnk.eassy_buy.service.product_search.ProductSearchService;
 import lombok.RequiredArgsConstructor;
 
 @RestController
-@RequestMapping("product")
+@RequestMapping("products")
 @RequiredArgsConstructor
 public class ProductSearchController {
 	private final ProductSearchService productSearchService;
 
-	@GetMapping("/search")
+	@GetMapping("search")
 	public ResponseEntity<Page<ProductDto>> searchProducts(@ModelAttribute ProductSearchRequest productSearchRequest,
 			Pageable pageable) {
 		return new ResponseEntity<Page<ProductDto>>(productSearchService.searchProduct(productSearchRequest),
 				HttpStatus.OK);
 	}
 
-	@GetMapping("/get_product/{id}")
-	public ProductDto getProduct(@PathVariable Long id) {
-		return productSearchService.getProduct(id);
+	@GetMapping("{productId}")
+	public ProductDto getProduct(@PathVariable Long productId) {
+		return productSearchService.getProduct(productId);
 	}
 
-	@GetMapping("/view_all_products")
+	@GetMapping
 	public List<ProductDto> viewAllProducts() {
 		return productSearchService.getAllProducts();
 	}

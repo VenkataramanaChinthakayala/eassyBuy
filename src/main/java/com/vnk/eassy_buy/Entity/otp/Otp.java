@@ -2,6 +2,7 @@ package com.vnk.eassy_buy.Entity.otp;
 
 import java.time.LocalDateTime;
 
+import com.vnk.eassy_buy.base_entity.BaseEntity;
 import com.vnk.eassy_buy.constants.OtpType;
 
 import jakarta.persistence.Entity;
@@ -20,7 +21,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @Data
 @Builder
-public class Otp {
+public class Otp extends BaseEntity {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Integer id;

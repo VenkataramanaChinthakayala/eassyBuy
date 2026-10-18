@@ -17,4 +17,6 @@ public interface AddressService {
 
 
 	AddressResponse addAddress(Integer id);
+
+	String updateAddress(Integer id, AddressRequest addressRequest);
 }

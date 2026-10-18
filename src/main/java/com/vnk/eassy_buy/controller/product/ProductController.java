@@ -14,26 +14,25 @@ import com.vnk.eassy_buy.service.product.ProductService;
 import lombok.AllArgsConstructor;
 
 @RestController
-@RequestMapping("/product")
+@RequestMapping("/products")
 @AllArgsConstructor
 public class ProductController {
 	private final ProductService productService;
 
-	@PostMapping("/add_product")
+	@PostMapping
 	public String addProduct(@RequestBody ProductDto productDto) {
 
 		return productService.addProduct(productDto);
 	}
 
-	@DeleteMapping("/delete_product/{id}")
-	public String deleteProduct(@PathVariable Long id) {
-		return productService.deleteProduct(id);
+	@DeleteMapping("/{productId}")
+	public String deleteProduct(@PathVariable Long productId) {
+		return productService.deleteProduct(productId);
 	}
 
-	@PutMapping("/update/{id}")
-	public String putMethodName(@PathVariable Long id, @RequestBody ProductDto productDto) {
-
-		return productService.updateProduct(id, productDto);
+	@PutMapping("/{productId}")
+	public String putMethodName(@PathVariable Long productId, @RequestBody ProductDto productDto) {
+		return productService.updateProduct(productId, productDto);
 	}
 
 }

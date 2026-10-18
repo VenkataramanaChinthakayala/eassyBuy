@@ -113,4 +113,43 @@ public class AddressServiceImpl implements AddressService {
 				.mobile(address.getMobile()).pincode(address.getPincode()).state(address.getState())
 				.street(address.getStreet()).build();
 	}
+
+	@Override
+	public String updateAddress(Integer id, AddressRequest addressRequest) {
+		log.info("Started updating address for ID: {}", id);
+		try {
+			if (addressRequest == null) {
+				log.warn("Address update failed: AddressRequest is null for ID: {}", id);
+				throw new IllegalArgumentException("Address request cannot be null");
+			}
+			log.debug("Fetching address details for ID: {}", id);
+			Address address = addressRepository.findById(id).orElseThrow(() -> {
+				log.warn("Address not found for ID: {}", id);
+				return new RuntimeException(ResponseMessages.ADDRESS_NOT_FOUND.getMessage());
+			});
+			log.info("Address found for ID: {}", id);
+			log.debug("Updating address fields for ID: {}", id);
+			address.setAlternateMobile(addressRequest.getAlternateMobile());
+			address.setArea(addressRequest.getArea());
+			address.setCity(addressRequest.getCity());
+			address.setCountry(addressRequest.getCountry());
+			address.setFullName(addressRequest.getFullName());
+			address.setHouseNo(addressRequest.getHouseNo());
+			address.setLandmark(addressRequest.getLandmark());
+			address.setMobile(addressRequest.getMobile());
+			address.setPincode(addressRequest.getPincode());
+			address.setState(addressRequest.getState());
+			address.setStreet(addressRequest.getStreet());
+			log.debug("Address fields updated, saving address for ID: {}", id);
+			addressRepository.save(address);
+			log.info("Address updated successfully for ID: {}", id);
+			return "Address updated successfully";
+		} catch (RuntimeException e) {
+			log.error("Failed to update address for ID: {}. Reason: {}", id, e.getMessage());
+			throw e;
+		} catch (Exception e) {
+			log.error("Unexpected error while updating address for ID: {}", id, e);
+			throw new RuntimeException("Failed to update address", e);
+		}
+	}
 }

@@ -3,6 +3,7 @@ package com.vnk.eassy_buy.Entity.profile;
 import java.time.LocalDate;
 
 import com.vnk.eassy_buy.Entity.user.User;
+import com.vnk.eassy_buy.base_entity.BaseEntity;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -22,7 +23,7 @@ import lombok.Setter;
 @Getter
 @AllArgsConstructor
 @NoArgsConstructor
-public class Profile {
+public class Profile extends BaseEntity {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)

@@ -21,7 +21,7 @@ import com.vnk.eassy_buy.service.address.AddressService;
 import lombok.AllArgsConstructor;
 
 @RestController
-@RequestMapping("/addresses")
+@RequestMapping("addresses")
 @AllArgsConstructor
 public class AddressController {
 	private final AddressService addressService;
@@ -36,17 +36,17 @@ public class AddressController {
 		return new ResponseEntity<>(addressService.getAllAddress(), HttpStatus.OK);
 	}
 
-	@DeleteMapping("/{id}")
+	@DeleteMapping("{id}")
 	public ResponseEntity<String> delete(@PathVariable Integer id) {
 		return new ResponseEntity<>("Address deleted successfully", HttpStatus.NO_CONTENT);
 	}
 
-	@PutMapping("/{id}/default")
+	@PutMapping("{id}/default")
 	public ResponseEntity<String> defaultAddress(@RequestParam Integer id) {
 		return ResponseEntity.ok("Address set as default successfully");
 	}
 
-	@GetMapping("/{id}")
+	@GetMapping("{id}")
 	public ResponseEntity<AddressResponse> getAddress(
 	        @PathVariable Integer id) {
 
@@ -54,4 +54,10 @@ public class AddressController {
 	            addressService.addAddress(id)
 	    );
 	}
+	
+	@PutMapping("{id}")
+	public ResponseEntity<String> updateAddress(@PathVariable Integer id, @RequestBody AddressRequest addressRequest) {
+		return new ResponseEntity<>(addressService.updateAddress(id,addressRequest), HttpStatus.OK);
+	}
+
 }

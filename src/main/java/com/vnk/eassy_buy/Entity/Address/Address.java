@@ -2,6 +2,7 @@ package com.vnk.eassy_buy.Entity.Address;
 
 
 import com.vnk.eassy_buy.Entity.user.User;
+import com.vnk.eassy_buy.base_entity.BaseEntity;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -21,7 +22,7 @@ import lombok.Setter;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class Address {
+public class Address extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
